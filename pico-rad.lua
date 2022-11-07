@@ -16,7 +16,6 @@ blue={
 	move={valid={}},
 	slctd_card={},
 	hand={},
-	hand_offset=110,
 	deck={},
 	discard={}
 }
@@ -27,7 +26,7 @@ red={
 	slctd_tkn=nil,
 	tkns={}, 
 	move={valid={}},
-	slctd_card,
+	slctd_card={},
 	hand={},
 	deck={},
 	discard={}
@@ -160,6 +159,13 @@ function sqr_i(sqr)
 	return sqr.x*(grid.size)+sqr.y+1
 end
 
+function return_i(t,val)
+	for i,v in pairs(t) do
+		if (v==val) then return i end
+	end
+	return nil
+end
+
 --check if table is empty
 function is_empty(t)
 	for _,_ in pairs(t) do
@@ -169,10 +175,8 @@ function is_empty(t)
 end
 
 --lerp 2 vector 2
-debug=nil
 function v2lerp(from,to,p)
-	debug={x=from.x+p/100*(to.x - from.x), y=from.y+p/100*(to.y - from.y)}
-	return debug
+	return {x=from.x+p/100*(to.x - from.x), y=from.y+p/100*(to.y - from.y)}
 end
 
 --compare 2 vector 2
@@ -289,7 +293,6 @@ function add_card(_plyr)
 end
 
 --recalculate screenspace position of cards
---needs to be centered when fewer than 5
 function update_hand(_plyr)
 	i=0
 	for crd in all(_plyr.hand) do
@@ -424,8 +427,9 @@ function turn_action(_plyr)
 end
 
 function opnt_turn()
-	bool=opnt_capture_scan()
-	if (not bool) then opnt_play_card() end
+	if (not opnt_capture_scan()) then 
+		opnt_play_card() 
+	end
 end
 
 function opnt_capture_scan()
@@ -441,35 +445,35 @@ function opnt_capture_scan()
 				set_valid_move(red, blue)
 				for v in all(red.move.valid) do
 					for plyr_tkn in all(blue.tkns) do
-						if (pos_compare(v,plyr_tkn.coord)) do
+						if (pos_compare(v,plyr_tkn.coord)) then
 							crsr.slct.hvr=grid.sqrs[sqr_i(v)]
 							params=reverse_search_path(red)
-							val1=tostr(params.path[params.index].x)..","..tostr(params.path[params.index].y)
-							val2=tostr(v.x)..","..tostr(v.y)
 							init_path_co(red,blue,params.path,params.index)
 
 							add(red.discard,red.slctd_card)
 							del(red.hand,red.slctd_card)
-							red.move.valid={}
-							red.slctd_card=nil
 							return true
 						end
 					end
 				end
-				red.move.valid={}
 			end
 		end
 	end
-	red.slctd_tkn={}
 	return false
 end
 
 function opnt_play_card()
-	red.scltd_tkn={}
+	red.scltd_tkn=nil
 	red.slctd_card=nil
+	red.move.valid={}
+
 	stkns={}
 	for i,v in ipairs(red.tkns) do
 		if (not v.locked) then add(stkns,v) end
+	end
+	if (is_empty(stkns)) then 
+		turn_action(red)
+		return 
 	end
 	red.slctd_tkn=rnd(stkns)
 
@@ -488,21 +492,21 @@ function opnt_play_card()
 	red.slctd_card=rnd(shand)
 	set_valid_move(red,blue)
 
-	if (is_empty(red.move.valid)) then
-		turn_action(red)
-	end
 	coord=rnd(red.move.valid)
 	crsr.slct.hvr=grid.sqrs[sqr_i(coord)]
 
 	params=reverse_search_path(red)
-	val2=#params.path
 
-	init_path_co(red,blue,params.path,params.index)
+	if(not is_empty(params)) then
+		init_path_co(red,blue,params.path,params.index)
 
-	add(red.discard,red.slctd_card)
-	del(red.hand,red.slctd_card)
-	red.move.valid={}
-	red.slctd_card=nil
+		add(red.discard,red.slctd_card)
+		del(red.hand,red.slctd_card)
+		red.move.valid={}
+		red.slctd_card=nil
+	else
+		turn_action(red)
+	end
 end
 
 --check if crsr is on a blue.tkn
@@ -540,11 +544,7 @@ function move_ally()
 --loop through each step in the path before slctd sqr and create lerp coroutine to execute in order
 				init_path_co(blue,red,params.path,params.index)
 			end
-		end
-		if (valid and #blue.hand<=0) then turn.state="game_over"
-		elseif (not valid) then
---			switch_state(blue,"slct_ally")
-		end		
+		end	
 	end
 end
 
@@ -572,8 +572,9 @@ function init_path_co(_plyr, _opnt, p, i)
 	for n=1,i do
 		--start coroutine, initialize function parameters in first coresume, continually called in state machine
 		_plyr.co[n]=cocreate(slide_movement)
-		tar={x=_plyr.tkns[_plyr.slctd_tkn.i].coord.x+p[n].x,y=_plyr.tkns[_plyr.slctd_tkn.i].coord.y+p[n].y}
-		coresume(_plyr.co[n],_plyr,_opnt,_plyr.tkns[_plyr.slctd_tkn.i],tar)
+		tkn=_plyr.tkns[return_i(_plyr.tkns,_plyr.slctd_tkn)]
+		tar={x=tkn.coord.x+p[n].x,y=tkn.coord.y+p[n].y}
+		coresume(_plyr.co[n],_plyr,_opnt,tkn,tar)
 	end
 	switch_state(_plyr,"co")
 end
@@ -621,7 +622,7 @@ function set_valid_move(_plyr, _opnt)
 			end
 			for tkn in all(_plyr.tkns) do
 				if(pos_compare(d,tkn.coord)) then
---coordinate occupied by blue tkn
+--coordinate occupied by ally tkn
 					blocked=true
 				end
 			end
@@ -836,9 +837,4 @@ end
 function draw_end_button()
 	if (blue.state=="end_io") then sp=42 else sp=40	end
 	spr(sp,108,108,2,2)
-end
-
-function debug_turns()
-	str=red.state.."\n"..tostr(bool1).."\n"..tostr(val1).."\n"..tostr(val2)
-	print(str,4,4,7)
 end
